@@ -1,4 +1,4 @@
-const { launchBrowser } = require('./browser');
+const { launchBrowser, closeBrowser } = require('./browser');
 const cloudscraper = require('cloudscraper');
 const axios = require('axios');
 const Config = require('./config');
@@ -272,7 +272,7 @@ class RequestManager {
             await context.close();
             return content;
         } finally {
-            await browser.close();
+            await closeBrowser();
         }
     }
 
@@ -348,7 +348,7 @@ class RequestManager {
             const content = await page.content();
             return content;
         } finally {
-            await browser.close();
+            await closeBrowser();
         }
     }
 
@@ -455,7 +455,7 @@ class RequestManager {
             
             return content;
         } finally {
-            await browser.close();
+            await closeBrowser();
         }
     }
 

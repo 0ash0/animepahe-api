@@ -47,114 +47,139 @@ try {
     }
 }
 
+let activeBrowser = null;
+let browserPromise = null;
+let refCount = 0;
+let closeTimeout = null;
+
 /**
- * Launches a Chromium browser with appropriate settings for the current environment.
- * Automatically supports both serverless and local development.
+ * Launches or returns the existing Chromium browser instance.
+ * Implements a singleton pattern with reference counting.
  */
 async function launchBrowser() {
-    const isServerless = process.env.VERCEL || process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME;
+    refCount++;
     
-    const baseArgs = [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-blink-features=AutomationControlled',
-        '--disable-gpu',
-        '--disable-background-networking',
-        '--disable-default-apps',
-        '--disable-extensions',
-        '--disable-infobars',
-        '--disable-notifications',
-        '--disable-offline-sync',
-        '--disable-sync',
-        '--disable-translate',
-        '--no-first-run',
-        '--no-zygote'
-    ];
-
-    // Serverless-specific optimizations
-    const serverlessArgs = [
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-        '--disable-features=TranslateUI',
-        '--disable-ipc-flooding-protection',
-        '--disable-hang-monitor',
-        '--disable-prompt-on-repost',
-        '--disable-domain-reliability',
-        '--disable-component-extensions-with-background-pages',
-        '--memory-pressure-off',
-        '--max_old_space_size=4096'
-    ];
-
-    // Default headless behavior:
-    // - in serverless environments we want headless=true unless explicitly overridden
-    // - allow overriding with CHROME_HEADLESS env var ("true"/"false") for local testing
-    const envHeadless = typeof process.env.CHROME_HEADLESS !== 'undefined'
-        ? String(process.env.CHROME_HEADLESS).toLowerCase() === 'true'
-        : null;
-
-    const defaultHeadless = isServerless ? true : false;
-
-    const launchOptions = {
-        headless: envHeadless === null ? defaultHeadless : envHeadless,
-        args: isServerless ? [...baseArgs, ...serverlessArgs] : baseArgs,
-        // Reduced timeouts for serverless
-        timeout: isServerless ? 30000 : 60000
-    };
-
-    // Add user agent
-    launchOptions.args.push(
-        '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    );
-
-    if (useServerlessChromium && chromiumBinary) {
-        console.log('Using serverless Chromium binary');
-        
-        try {
-            const executablePath = await chromiumBinary.executablePath();
-
-            if (existsSync(executablePath)) {
-                launchOptions.executablePath = executablePath;
-                // Use chromium.args but merge with our custom args
-                // Prepend serverless chromium recommended args so they run first
-                launchOptions.args = [...chromiumBinary.args, ...launchOptions.args];
-                
-                console.log('Serverless Chromium configured successfully');
-            } else {
-                console.warn('⚠️ Chromium binary not found at expected path. Falling back to default.');
-            }
-        } catch (error) {
-            console.error('Error setting up serverless Chromium:', error);
-        }
+    // Clear any pending close timeout since we now have an active requester
+    if (closeTimeout) {
+        clearTimeout(closeTimeout);
+        closeTimeout = null;
     }
 
-    console.log('Launching browser with headless=%s and args count=%d', launchOptions.headless, launchOptions.args.length);
-    
-    try {
-        const browser = await chromium.launch(launchOptions);
-        console.log('Browser launched successfully');
-        return browser;
-    } catch (error) {
-        console.error('Failed to launch browser:', error);
+    if (browserPromise) {
+        return browserPromise;
+    }
+
+    browserPromise = (async () => {
+        const isServerless = process.env.VERCEL || process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME;
         
-        // Fallback with minimal args
-        console.log('Attempting fallback launch with minimal configuration...');
-        const fallbackOptions = {
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+        const baseArgs = [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-blink-features=AutomationControlled',
+            '--disable-gpu',
+            '--disable-background-networking',
+            '--disable-default-apps',
+            '--disable-extensions',
+            '--disable-infobars',
+            '--disable-notifications',
+            '--disable-offline-sync',
+            '--disable-sync',
+            '--disable-translate',
+            '--no-first-run',
+            '--no-zygote'
+        ];
+
+        const serverlessArgs = [
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
+            '--disable-features=TranslateUI',
+            '--disable-ipc-flooding-protection',
+            '--disable-hang-monitor',
+            '--disable-prompt-on-repost',
+            '--disable-domain-reliability',
+            '--disable-component-extensions-with-background-pages',
+            '--memory-pressure-off',
+            '--max_old_space_size=4096'
+        ];
+
+        const envHeadless = typeof process.env.CHROME_HEADLESS !== 'undefined'
+            ? String(process.env.CHROME_HEADLESS).toLowerCase() === 'true'
+            : null;
+
+        const defaultHeadless = isServerless ? true : false;
+
+        const launchOptions = {
+            headless: envHeadless === null ? defaultHeadless : envHeadless,
+            args: isServerless ? [...baseArgs, ...serverlessArgs] : baseArgs,
+            timeout: isServerless ? 30000 : 60000
         };
-        
+
+        launchOptions.args.push(
+            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        );
+
         if (useServerlessChromium && chromiumBinary) {
             try {
-                fallbackOptions.executablePath = await chromiumBinary.executablePath();
-            } catch (e) {
-                console.warn('Could not set executable path for fallback');
+                const executablePath = await chromiumBinary.executablePath();
+                if (existsSync(executablePath)) {
+                    launchOptions.executablePath = executablePath;
+                    launchOptions.args = [...chromiumBinary.args, ...launchOptions.args];
+                }
+            } catch (error) {
+                console.error('Error setting up serverless Chromium:', error);
             }
         }
+
+        console.log('Launching browser singleton with headless=%s', launchOptions.headless);
         
-        return await chromium.launch(fallbackOptions);
+        try {
+            activeBrowser = await chromium.launch(launchOptions);
+            return activeBrowser;
+        } catch (error) {
+            console.error('Failed to launch browser:', error);
+            const fallbackOptions = {
+                headless: true,
+                args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+            };
+            activeBrowser = await chromium.launch(fallbackOptions);
+            return activeBrowser;
+        }
+    })();
+
+    return browserPromise;
+}
+
+/**
+ * Decrements the reference count and closes the browser if it reaches zero.
+ * Includes a small delay before closing to handle rapid successive requests.
+ */
+async function closeBrowser() {
+    refCount--;
+    
+    if (refCount <= 0) {
+        refCount = 0; // Prevent negative
+        
+        // Wait 5 seconds before closing to see if new requests come in
+        // This is efficient for batch processing
+        if (closeTimeout) clearTimeout(closeTimeout);
+        
+        closeTimeout = setTimeout(async () => {
+            if (refCount === 0 && activeBrowser) {
+                console.log('Closing browser singleton (idle)');
+                const browserToClose = activeBrowser;
+                activeBrowser = null;
+                browserPromise = null;
+                try {
+                    await browserToClose.close();
+                } catch (e) {
+                    console.error('Error closing browser:', e.message);
+                }
+            }
+            closeTimeout = null;
+        }, 5000);
     }
 }
 
-module.exports = { launchBrowser };
+module.exports = { launchBrowser, closeBrowser };

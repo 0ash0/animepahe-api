@@ -4,7 +4,7 @@ const Config = require('../utils/config');
 const { JSDOM } = require('jsdom');
 const vm = require('vm')
 const RequestManager = require("../utils/requestManager");
-const { launchBrowser } = require('../utils/browser');
+const { launchBrowser, closeBrowser } = require('../utils/browser');
 const { CustomError } = require('../middleware/errorHandler');
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -50,14 +50,9 @@ class Animepahe {
         if (this.isRefreshingCookies) return;
         this.isRefreshingCookies = true;
 
-        let browser = this.activeBrowser;
-
         try {
-            if (!browser) {
-                browser = await launchBrowser();
-                console.log('Browser launched successfully');
-                this.activeBrowser = browser; // Store the browser instance
-            }
+            const browser = await launchBrowser();
+            console.log('Browser launched successfully');
 
             const context = await browser.newContext();
             const page = await context.newPage();
@@ -102,11 +97,13 @@ class Animepahe {
             await fs.writeFile(this.cookiesPath, JSON.stringify(cookieData, null, 2));
 
             console.log('Cookies refreshed successfully');
+            await context.close();
         } catch (error) {
             console.error('Cookie refresh error:', error);
             throw new CustomError(`Failed to refresh cookies: ${error.message}`, 503);
         } finally {
             this.isRefreshingCookies = false;
+            await closeBrowser();
         }
     }
 
