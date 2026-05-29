@@ -47,30 +47,39 @@ try {
     }
 }
 
-let activeBrowser = null;
-let browserPromise = null;
-let refCount = 0;
-let closeTimeout = null;
+const activeBrowsers = new Map(); // Map<proxyKey, activeBrowser>
+const browserPromises = new Map(); // Map<proxyKey, browserPromise>
+const refCounts = new Map(); // Map<proxyKey, count>
+const closeTimeouts = new Map(); // Map<proxyKey, timeout>
 
 /**
- * Launches or returns the existing Chromium browser instance.
- * Implements a singleton pattern with reference counting.
+ * Launches or returns an existing Chromium browser instance for a specific proxy.
+ * Implements a singleton pattern keyed by proxy to ensure IP consistency.
+ * @param {string|null} proxy - The proxy URL to use (or null for no proxy)
  */
-async function launchBrowser() {
-    refCount++;
+async function launchBrowser(proxy = null) {
+    const proxyKey = proxy || 'no-proxy';
     
-    // Clear any pending close timeout since we now have an active requester
-    if (closeTimeout) {
-        clearTimeout(closeTimeout);
-        closeTimeout = null;
+    // Increment reference count for this specific proxy
+    const currentCount = refCounts.get(proxyKey) || 0;
+    refCounts.set(proxyKey, currentCount + 1);
+    
+    // Clear any pending close timeout for this specific proxy
+    const existingTimeout = closeTimeouts.get(proxyKey);
+    if (existingTimeout) {
+        clearTimeout(existingTimeout);
+        closeTimeouts.delete(proxyKey);
     }
 
-    if (browserPromise) {
-        return browserPromise;
+    // Return existing promise if already launching/launched
+    if (browserPromises.has(proxyKey)) {
+        return browserPromises.get(proxyKey);
     }
 
-    browserPromise = (async () => {
+    const promise = (async () => {
         const isServerless = process.env.VERCEL || process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME;
+        const isProduction = process.env.NODE_ENV === 'production';
+        const isLinux = process.platform === 'linux';
         
         const baseArgs = [
             '--no-sandbox',
@@ -108,13 +117,37 @@ async function launchBrowser() {
             ? String(process.env.CHROME_HEADLESS).toLowerCase() === 'true'
             : null;
 
-        const defaultHeadless = isServerless ? true : false;
+        const defaultHeadless = (isServerless || isProduction || isLinux) ? true : false;
 
         const launchOptions = {
             headless: envHeadless === null ? defaultHeadless : envHeadless,
             args: isServerless ? [...baseArgs, ...serverlessArgs] : baseArgs,
             timeout: isServerless ? 30000 : 60000
         };
+
+        // Add proxy if provided
+        if (proxy) {
+            // We use the same formatting as RequestManager
+            const formatted = (proxy.startsWith('http://') || proxy.startsWith('https://') || proxy.startsWith('socks5://'))
+                ? proxy 
+                : 'http://' + proxy;
+            
+            try {
+                const parsedUrl = new URL(formatted);
+                launchOptions.proxy = {
+                    server: `${parsedUrl.protocol}//${parsedUrl.host}`
+                };
+                if (parsedUrl.username) {
+                    launchOptions.proxy.username = decodeURIComponent(parsedUrl.username);
+                }
+                if (parsedUrl.password) {
+                    launchOptions.proxy.password = decodeURIComponent(parsedUrl.password);
+                }
+                console.log(`Configuring browser singleton with proxy: ${parsedUrl.host}`);
+            } catch (e) {
+                console.error(`Error parsing proxy for browser launch: ${e.message}`);
+            }
+        }
 
         launchOptions.args.push(
             '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -132,53 +165,65 @@ async function launchBrowser() {
             }
         }
 
-        console.log('Launching browser singleton with headless=%s', launchOptions.headless);
+        console.log(`Launching browser singleton [${proxyKey}] with headless=${launchOptions.headless}`);
         
         try {
-            activeBrowser = await chromium.launch(launchOptions);
-            return activeBrowser;
+            const browser = await chromium.launch(launchOptions);
+            activeBrowsers.set(proxyKey, browser);
+            return browser;
         } catch (error) {
-            console.error('Failed to launch browser:', error);
+            console.error(`Failed to launch browser [${proxyKey}]:`, error);
             const fallbackOptions = {
                 headless: true,
                 args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
             };
-            activeBrowser = await chromium.launch(fallbackOptions);
-            return activeBrowser;
+            const browser = await chromium.launch(fallbackOptions);
+            activeBrowsers.set(proxyKey, browser);
+            return browser;
         }
     })();
 
-    return browserPromise;
+    browserPromises.set(proxyKey, promise);
+    return promise;
 }
 
 /**
- * Decrements the reference count and closes the browser if it reaches zero.
- * Includes a small delay before closing to handle rapid successive requests.
+ * Decrements the reference count and closes the browser for a specific proxy if it reaches zero.
+ * @param {string|null} proxy - The proxy URL used (or null for no proxy)
  */
-async function closeBrowser() {
-    refCount--;
+async function closeBrowser(proxy = null) {
+    const proxyKey = proxy || 'no-proxy';
+    let currentCount = refCounts.get(proxyKey) || 0;
+    currentCount--;
     
-    if (refCount <= 0) {
-        refCount = 0; // Prevent negative
+    if (currentCount <= 0) {
+        currentCount = 0;
+        refCounts.set(proxyKey, 0);
         
-        // Wait 5 seconds before closing to see if new requests come in
-        // This is efficient for batch processing
-        if (closeTimeout) clearTimeout(closeTimeout);
+        // Clear any existing timeout
+        if (closeTimeouts.has(proxyKey)) {
+            clearTimeout(closeTimeouts.get(proxyKey));
+        }
         
-        closeTimeout = setTimeout(async () => {
-            if (refCount === 0 && activeBrowser) {
-                console.log('Closing browser singleton (idle)');
-                const browserToClose = activeBrowser;
-                activeBrowser = null;
-                browserPromise = null;
+        const timeout = setTimeout(async () => {
+            if ((refCounts.get(proxyKey) || 0) === 0 && activeBrowsers.has(proxyKey)) {
+                console.log(`Closing browser singleton [${proxyKey}] (idle)`);
+                const browserToClose = activeBrowsers.get(proxyKey);
+                activeBrowsers.delete(proxyKey);
+                browserPromises.delete(proxyKey);
+                refCounts.delete(proxyKey);
                 try {
                     await browserToClose.close();
                 } catch (e) {
-                    console.error('Error closing browser:', e.message);
+                    console.error(`Error closing browser [${proxyKey}]:`, e.message);
                 }
             }
-            closeTimeout = null;
+            closeTimeouts.delete(proxyKey);
         }, 5000);
+        
+        closeTimeouts.set(proxyKey, timeout);
+    } else {
+        refCounts.set(proxyKey, currentCount);
     }
 }
 

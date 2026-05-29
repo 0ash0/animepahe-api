@@ -244,7 +244,8 @@ class RequestManager {
     static async scrapeWithPlaywrightPage(url, options = {}) {
         console.log(`Fetching HTML with Playwright from ${url}...`);
         
-        const browser = await launchBrowser();
+        const proxy = Config.proxyEnabled ? Config.getRandomProxy() : null;
+        const browser = await launchBrowser(proxy);
         try {
             const context = await browser.newContext({
                 userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -272,7 +273,7 @@ class RequestManager {
             await context.close();
             return content;
         } finally {
-            await closeBrowser();
+            await closeBrowser(proxy);
         }
     }
 
@@ -280,7 +281,7 @@ class RequestManager {
         console.log('Fetching content from:', url);
         const proxy = Config.proxyEnabled ? Config.getRandomProxy() : null;
 
-        const browser = await launchBrowser();
+        const browser = await launchBrowser(proxy);
 
         try {
             const contextOptions = {};
@@ -346,9 +347,10 @@ class RequestManager {
             }
 
             const content = await page.content();
+            await context.close();
             return content;
         } finally {
-            await closeBrowser();
+            await closeBrowser(proxy);
         }
     }
 
@@ -389,7 +391,7 @@ class RequestManager {
         
         const proxy = Config.proxyEnabled ? Config.getRandomProxy() : null;
 
-        const browser = await launchBrowser();
+        const browser = await launchBrowser(proxy);
 
         try {
             const contextOptions = {
@@ -455,7 +457,7 @@ class RequestManager {
             
             return content;
         } finally {
-            await closeBrowser();
+            await closeBrowser(proxy);
         }
     }
 

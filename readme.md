@@ -190,6 +190,11 @@ The API returns errors in this format:
 }
 ```
 
+## Deployment
+
+- **Headless Mode:** Automatically enabled on Linux/Production. Use `CHROME_HEADLESS=true/false` to override.
+- **Efficiency:** Uses a shared browser singleton. It closes automatically after 5 seconds of inactivity.
+
 ## Technologies Used
 
 - Node.js

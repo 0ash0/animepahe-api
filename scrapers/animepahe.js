@@ -50,9 +50,11 @@ class Animepahe {
         if (this.isRefreshingCookies) return;
         this.isRefreshingCookies = true;
 
+        const proxy = Config.proxyEnabled ? Config.getRandomProxy() : null;
+
         try {
-            const browser = await launchBrowser();
-            console.log('Browser launched successfully');
+            const browser = await launchBrowser(proxy);
+            console.log('Browser singleton obtained for cookie refresh');
 
             const context = await browser.newContext();
             const page = await context.newPage();
@@ -103,7 +105,7 @@ class Animepahe {
             throw new CustomError(`Failed to refresh cookies: ${error.message}`, 503);
         } finally {
             this.isRefreshingCookies = false;
-            await closeBrowser();
+            await closeBrowser(proxy);
         }
     }
 
