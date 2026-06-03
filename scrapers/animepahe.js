@@ -62,7 +62,10 @@ class Animepahe {
             const proxyUrl = Config.proxyEnabled ? Config.getRandomProxy() : null;
             const proxyOptions = proxyUrl ? RequestManager.getPlaywrightProxyOptions(proxyUrl) : null;
             console.log('Using proxy for cookie refresh:', proxyOptions ? proxyOptions.server : 'none');
-            const context = await browser.newContext(proxyOptions ? { proxy: proxyOptions } : {});
+            const context = await browser.newContext({
+                ...(proxyOptions && { proxy: proxyOptions }),
+                ignoreHTTPSErrors: true
+            });
             const page = await context.newPage();
 
             // Add stealth plugin
