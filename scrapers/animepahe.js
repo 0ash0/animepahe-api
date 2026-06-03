@@ -83,9 +83,9 @@ class Animepahe {
             console.log('Navigating to URL...');
             await page.goto(Config.getUrl('home'), {
                 waitUntil: 'networkidle',
-                timeout: 30000, 
+                timeout: 60000, 
             });
-
+            
             // Check for DDoS-Guard challenge
             await page.waitForTimeout(2000);
             const isChallengeActive = await page.$('#ddg-cookie');
@@ -94,7 +94,13 @@ class Animepahe {
                 await page.waitForSelector('#ddg-cookie', { state: 'hidden', timeout: 30000 });
             }
 
-            const cookies = await context.cookies();
+            await page.waitForTimeout(5000);
+
+            const pageContent = await page.content();
+            if (pageContent.includes('Just a moment') || pageContent.includes('challenge')) {
+                throw new CustomError('Cloudflare challenge still active after navigation', 503);
+            }
+            const cookies = await context.cookies(['https://animepahe.pw']);
             if (!cookies || cookies.length === 0) {
                 throw new CustomError('No cookies found after page load', 503);
             }
