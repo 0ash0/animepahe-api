@@ -3,7 +3,7 @@ const path = require('path');
 const Config = require('../utils/config');
 const { JSDOM } = require('jsdom');
 const vm = require('vm')
-const RequestManager = require("../utils/requestManager");
+const RequestManager = require('../utils/requestManager');
 const { launchBrowser } = require('../utils/browser');
 const { CustomError } = require('../middleware/errorHandler');
 
@@ -59,12 +59,10 @@ class Animepahe {
                 this.activeBrowser = browser; // Store the browser instance
             }
 
-            const proxyUrl = Config.getRandomProxy();
+            const proxyUrl = Config.proxyEnabled ? Config.getRandomProxy() : null;
             const proxyOptions = proxyUrl ? RequestManager.getPlaywrightProxyOptions(proxyUrl) : null;
-            
-            const context = await browser.newContext({
-                ...(proxyOptions && { proxy: proxyOptions })
-            });
+            console.log('Using proxy for cookie refresh:', proxyOptions ? proxyOptions.server : 'none');
+            const context = await browser.newContext(proxyOptions ? { proxy: proxyOptions } : {});
             const page = await context.newPage();
 
             // Add stealth plugin
