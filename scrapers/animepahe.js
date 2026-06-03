@@ -59,7 +59,12 @@ class Animepahe {
                 this.activeBrowser = browser; // Store the browser instance
             }
 
-            const context = await browser.newContext();
+            const proxyUrl = Config.getRandomProxy();
+            const proxyOptions = proxyUrl ? RequestManager.getPlaywrightProxyOptions(proxyUrl) : null;
+            
+            const context = await browser.newContext({
+                ...(proxyOptions && { proxy: proxyOptions })
+            });
             const page = await context.newPage();
 
             // Add stealth plugin
