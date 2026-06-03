@@ -96,11 +96,19 @@ class Animepahe {
 
             await page.waitForTimeout(5000);
 
+            console.log('Page URL after goto:', page.url());
+            console.log('Page title after goto:', await page.title());
+            
             const pageContent = await page.content();
+            console.log('Page content start:', pageContent.slice(0, 300));
+            
             if (pageContent.includes('Just a moment') || pageContent.includes('challenge')) {
                 throw new CustomError('Cloudflare challenge still active after navigation', 503);
             }
+            
             const cookies = await context.cookies(['https://animepahe.pw']);
+            console.log('Cookies found:', cookies.map(c => c.name));
+            
             if (!cookies || cookies.length === 0) {
                 throw new CustomError('No cookies found after page load', 503);
             }
