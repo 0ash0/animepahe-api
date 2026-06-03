@@ -3,6 +3,6 @@ builder = "NIXPACKS"
 
 [deploy]
 startCommand = "npm start"
-healthcheckPath = "/"
-healthcheckTimeout = 100
+healthcheckPath = "/api/airing"
+healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
