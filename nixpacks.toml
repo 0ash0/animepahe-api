@@ -1,5 +1,6 @@
 [phases.setup]
 nixPkgs = [
+  "...",
   "nss",
   "nspr",
   "atk",
@@ -21,12 +22,11 @@ nixPkgs = [
   "expat",
   "fontconfig",
   "freetype",
-  "glib",
-  "glibc"
+  "glib"
 ]
 
 [phases.install]
 cmds = [
-  "npm ci",
+  "...",
   "npx playwright install chromium"
 ]
