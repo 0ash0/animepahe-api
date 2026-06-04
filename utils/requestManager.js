@@ -521,13 +521,13 @@ class RequestManager {
         }
     }
 
-    static async fetchApiData(url, params = {}, cookieHeader) {
+    static async fetchApiData(url, params = {}, cookieHeader, preferredProxyUrl = null) {
         try {
             if (!cookieHeader) {
                 throw new CustomError('DDoS-Guard authentication required', 403);
             }
             
-            const proxyUrl = Config.proxyEnabled ? Config.getRandomProxy() : null;
+            const proxyUrl = Config.proxyEnabled ? (preferredProxyUrl || Config.getRandomProxy()) : null;
 
             // Build proxy agents for proper authenticated proxy support
             let httpAgent = undefined;
@@ -574,7 +574,7 @@ class RequestManager {
             return response.data;
         } catch (error) {
             if (error.response?.status === 407) {
-                const proxyUrl = Config.proxyEnabled ? Config.getRandomProxy() : null;
+                const proxyUrl = Config.proxyEnabled ? (preferredProxyUrl || Config.getRandomProxy()) : null;
                 console.error(`[Proxy 407] Proxy authentication failed. Proxy: ${this.maskProxyUrl(proxyUrl)}`);
                 console.error(`[Proxy 407] USE_PROXY=${process.env.USE_PROXY}, PROXIES env length=${(process.env.PROXIES || '').length}`);
                 throw new CustomError('Proxy authentication failed (407). Check proxy credentials in environment.', 407);
