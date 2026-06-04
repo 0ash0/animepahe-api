@@ -681,9 +681,14 @@ class RequestManager {
                 console.error(`[Proxy 407] USE_PROXY=${process.env.USE_PROXY}, PROXIES env length=${(process.env.PROXIES || '').length}`);
                 throw new CustomError('Proxy authentication failed (407). Check proxy credentials in environment.', 407);
             }
-            if (error instanceof CustomError &&
-                error.message.includes('DDoS-Guard authentication required') &&
-                process.env.API_COOKIE_BROWSER_FALLBACK === 'true') {
+            const shouldTryBrowserFallback = process.env.API_COOKIE_BROWSER_FALLBACK === 'true' && (
+                (error instanceof CustomError && error.message.includes('DDoS-Guard authentication required')) ||
+                error.response?.status === 403 ||
+                error.response?.status === 502 ||
+                error.response?.status === 503
+            );
+
+            if (shouldTryBrowserFallback) {
                 console.log('[API] Axios cookie request was blocked; trying Playwright browser-context fallback...');
                 return this.fetchApiDataWithPlaywright(url, params, cookieHeader, preferredProxyUrl);
             }
