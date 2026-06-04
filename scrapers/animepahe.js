@@ -180,6 +180,11 @@ class Animepahe {
             }
         }
 
+        if (Config.cookies) {
+            console.log('Using cookies from environment/config');
+            return Config.cookies;
+        }
+
         let cookieData;
         try {
             cookieData = JSON.parse(await fs.readFile(this.cookiesPath, 'utf8'));
