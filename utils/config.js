@@ -42,7 +42,19 @@ class Config {
         
         try {
             if(typeof cookieHeader === 'string' && cookieHeader.includes('=')) {
-                this.cookies = cookieHeader;
+                const normalizedCookies = cookieHeader
+                    .replace(/[\r\n\t]+/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .replace(/,\s*(?=[A-Za-z0-9_%.-]+=)/g, '; ')
+                    .replace(/;\s*/g, '; ')
+                    .trim();
+
+                if (/[\u0000-\u001F\u007F]/.test(normalizedCookies)) {
+                    console.warn("Warning: Cookie header contains invalid control characters");
+                    return false;
+                }
+
+                this.cookies = normalizedCookies;
                 return true;
             } else {
                 console.warn("Warning: Invalid cookie format");
@@ -120,7 +132,7 @@ class Config {
 
         // Handle cookies
         if (process.env.COOKIES) {
-            const cookiePattern = /^([^=]+=[^;]+)(; [^=]+=[^;]+)*$/;
+            const cookiePattern = /^([^=]+=[^;]+)(;\s*[^=]+=[^;]+)*$/;
             if (!cookiePattern.test(process.env.COOKIES)) {
                 console.warn("Invalid cookie format in environment variables");
             }
