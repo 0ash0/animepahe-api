@@ -17,6 +17,7 @@ class Animepahe {
         this.isRefreshingCookies = false;
         this.activeBrowser = null;
         this.cloudflareSessionCookies = null
+        this.cookieProxyUrl = null;
 
         // tracking for current kwik request
         this.currentKwikRequest = null;
@@ -82,8 +83,8 @@ class Animepahe {
 
             console.log('Navigating to URL...');
             await page.goto(Config.getUrl('home'), {
-                waitUntil: 'networkidle',
-                timeout: 60000, 
+                waitUntil: 'domcontentloaded',
+                timeout: 120000,
             });
             
             // Check for DDoS-Guard challenge
@@ -120,6 +121,7 @@ class Animepahe {
 
             await fs.mkdir(path.dirname(this.cookiesPath), { recursive: true });
             await fs.writeFile(this.cookiesPath, JSON.stringify(cookieData, null, 2));
+            this.cookieProxyUrl = proxyUrl;
 
             console.log('Cookies refreshed successfully');
         } catch (error) {
@@ -171,7 +173,7 @@ class Animepahe {
         try {
             const cookieHeader = await this.getCookies(userProvidedCookies);
             const url = new URL(endpoint, Config.getUrl('home')).toString();
-            return await RequestManager.fetchApiData(url, params, cookieHeader);
+            return await RequestManager.fetchApiData(url, params, cookieHeader, this.cookieProxyUrl);
         } catch (error) {
             // Only retry with automatic cookies if user didn't provide cookies
             if (!userProvidedCookies && (error.response?.status === 401 || error.response?.status === 403)) {
