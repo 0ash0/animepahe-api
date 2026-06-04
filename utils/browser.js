@@ -22,7 +22,8 @@ if (String(process.env.USE_STEALTH).toLowerCase() === 'true') {
         playwrightExtraAvailable = true;
         console.log('Using playwright-extra with stealth plugin (USE_STEALTH=true)');
     } catch (err) {
-        console.warn('USE_STEALTH=true but playwright-extra or stealth plugin not installed; falling back to regular Playwright');
+        console.warn(`USE_STEALTH=true but playwright-extra or stealth plugin could not load: ${err.message}`);
+        console.warn('Falling back to regular Playwright');
     }
 }
 
