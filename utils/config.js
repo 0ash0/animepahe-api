@@ -124,7 +124,7 @@ class Config {
             if (!cookiePattern.test(process.env.COOKIES)) {
                 console.warn("Invalid cookie format in environment variables");
             }
-            console.log("Setting cookies from environment variables...", process.env.COOKIES);
+            console.log("Setting cookies from environment variables...");
             const cookiesSet = this.setCookies(process.env.COOKIES);
             if (!cookiesSet) {
                 console.warn("Failed to set cookies from environment variables");
