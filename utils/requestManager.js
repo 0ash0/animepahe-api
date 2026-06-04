@@ -5,6 +5,35 @@ const Config = require('./config');
 const { CustomError } = require('../middleware/errorHandler');
 
 class RequestManager {
+    static parseCookieHeader(cookieHeader, domain = 'animepahe.pw') {
+        if (!cookieHeader || typeof cookieHeader !== 'string') return [];
+        return cookieHeader
+            .split(';')
+            .map(part => part.trim())
+            .filter(Boolean)
+            .map(part => {
+                const separatorIndex = part.indexOf('=');
+                if (separatorIndex <= 0) return null;
+                const name = part.slice(0, separatorIndex).trim();
+                const value = part.slice(separatorIndex + 1).trim();
+                if (!name || !value) return null;
+                return {
+                    name,
+                    value,
+                    domain,
+                    path: '/',
+                    secure: true,
+                    httpOnly: false,
+                    sameSite: 'None'
+                };
+            })
+            .filter(Boolean);
+    }
+
+    static getCookieNames(cookieHeader) {
+        return this.parseCookieHeader(cookieHeader).map(cookie => cookie.name);
+    }
+
     static getPlaywrightProxyOptions(proxyString) {
         if (!proxyString) return null;
         try {
@@ -521,6 +550,73 @@ class RequestManager {
         }
     }
 
+    static async fetchApiDataWithPlaywright(url, params = {}, cookieHeader, preferredProxyUrl = null) {
+        const proxyUrl = Config.proxyEnabled ? (preferredProxyUrl || Config.getRandomProxy()) : null;
+        const apiUrl = new URL(url);
+        Object.entries(params || {}).forEach(([key, value]) => {
+            if (value !== undefined && value !== null) {
+                apiUrl.searchParams.set(key, value);
+            }
+        });
+
+        const browser = await launchBrowser();
+        try {
+            const contextOptions = {
+                userAgent: Config.userAgent,
+                extraHTTPHeaders: {
+                    'Accept': 'application/json, text/javascript, */*; q=0.01',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Referer': Config.getUrl('home'),
+                    'x-requested-with': 'XMLHttpRequest'
+                },
+                ignoreHTTPSErrors: true
+            };
+
+            if (proxyUrl) {
+                const pwProxy = this.getPlaywrightProxyOptions(proxyUrl);
+                if (pwProxy) {
+                    contextOptions.proxy = pwProxy;
+                }
+            }
+
+            const context = await browser.newContext(contextOptions);
+            const cookies = this.parseCookieHeader(cookieHeader);
+            if (cookies.length > 0) {
+                console.log(`[Playwright API] Injecting cookies: ${cookies.map(cookie => cookie.name).join(', ')}`);
+                await context.addCookies(cookies);
+            }
+
+            const page = await context.newPage();
+            console.log(`[Playwright API] Fetching ${apiUrl.toString()}`);
+            const response = await page.goto(apiUrl.toString(), {
+                waitUntil: 'domcontentloaded',
+                timeout: 60000
+            });
+
+            const status = response ? response.status() : 0;
+            const text = await page.locator('body').innerText({ timeout: 5000 }).catch(async () => page.content());
+            const trimmedText = text.trim();
+
+            if (trimmedText.includes('DDoS-GUARD') ||
+                trimmedText.includes('checking your browser') ||
+                trimmedText.includes('Just a moment') ||
+                status === 403 ||
+                status === 503) {
+                console.log(`[Playwright API] Blocked response status=${status} body=${trimmedText.slice(0, 200)}`);
+                throw new CustomError('DDoS-Guard authentication required, invalid cookies', 403);
+            }
+
+            try {
+                return JSON.parse(trimmedText);
+            } catch (error) {
+                console.log(`[Playwright API] JSON parse failed status=${status} body=${trimmedText.slice(0, 200)}`);
+                throw error;
+            }
+        } finally {
+            await browser.close();
+        }
+    }
+
     static async fetchApiData(url, params = {}, cookieHeader, preferredProxyUrl = null) {
         try {
             if (!cookieHeader) {
@@ -528,6 +624,8 @@ class RequestManager {
             }
             
             const proxyUrl = Config.proxyEnabled ? (preferredProxyUrl || Config.getRandomProxy()) : null;
+            console.log(`[API] Cookie names: ${this.getCookieNames(cookieHeader).join(', ') || 'none'}`);
+            console.log(`[API] Proxy: ${this.maskProxyUrl(proxyUrl)}`);
 
             // Build proxy agents for proper authenticated proxy support
             let httpAgent = undefined;
@@ -582,6 +680,12 @@ class RequestManager {
                 console.error(`[Proxy 407] Proxy authentication failed. Proxy: ${this.maskProxyUrl(proxyUrl)}`);
                 console.error(`[Proxy 407] USE_PROXY=${process.env.USE_PROXY}, PROXIES env length=${(process.env.PROXIES || '').length}`);
                 throw new CustomError('Proxy authentication failed (407). Check proxy credentials in environment.', 407);
+            }
+            if (error instanceof CustomError &&
+                error.message.includes('DDoS-Guard authentication required') &&
+                process.env.API_COOKIE_BROWSER_FALLBACK === 'true') {
+                console.log('[API] Axios cookie request was blocked; trying Playwright browser-context fallback...');
+                return this.fetchApiDataWithPlaywright(url, params, cookieHeader, preferredProxyUrl);
             }
             if (error.response?.status === 403 || error.response?.status === 502 || error.response?.status === 503) {
                 throw new CustomError('DDoS-Guard authentication required, invalid cookies', 403);
