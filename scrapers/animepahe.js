@@ -9,6 +9,36 @@ const { CustomError } = require('../middleware/errorHandler');
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+async function waitForChallengeToClear(page, timeoutMs = 90000) {
+    const startedAt = Date.now();
+    let lastTitle = '';
+    let lastUrl = '';
+
+    while (Date.now() - startedAt < timeoutMs) {
+        lastUrl = page.url();
+        lastTitle = await page.title().catch(() => '');
+        const bodyText = await page.locator('body').innerText({ timeout: 3000 }).catch(() => '');
+        const lowerTitle = lastTitle.toLowerCase();
+        const lowerBody = bodyText.toLowerCase();
+
+        const challengeActive =
+            lowerTitle.includes('just a moment') ||
+            lowerBody.includes('just a moment') ||
+            lowerBody.includes('checking your browser') ||
+            lowerBody.includes('cloudflare') ||
+            lastUrl.includes('/cdn-cgi/challenge');
+
+        if (!challengeActive) {
+            return { cleared: true, title: lastTitle, url: lastUrl };
+        }
+
+        console.log(`Challenge still active; waiting... title="${lastTitle}" url="${lastUrl}"`);
+        await page.waitForTimeout(5000);
+    }
+
+    return { cleared: false, title: lastTitle, url: lastUrl };
+}
+
 class Animepahe {
     constructor() {
         // Use /tmp directory for Vercel
@@ -86,6 +116,12 @@ class Animepahe {
                 waitUntil: 'domcontentloaded',
                 timeout: 120000,
             });
+
+            const challengeTimeout = Number(process.env.CHALLENGE_TIMEOUT_MS || 90000);
+            const challengeResult = await waitForChallengeToClear(page, challengeTimeout);
+            if (!challengeResult.cleared) {
+                console.log('Challenge did not clear:', challengeResult);
+            }
             
             // Check for DDoS-Guard challenge
             await page.waitForTimeout(2000);
