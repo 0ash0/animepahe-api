@@ -52,7 +52,11 @@ try {
  * Automatically supports both serverless and local development.
  */
 async function launchBrowser() {
-    const isServerless = process.env.VERCEL || process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME;
+    const isServerless = process.env.VERCEL ||
+        process.env.NETLIFY ||
+        process.env.AWS_LAMBDA_FUNCTION_NAME ||
+        process.env.RAILWAY_ENVIRONMENT ||
+        process.env.RAILWAY_PROJECT_ID;
     
     const baseArgs = [
         '--no-sandbox',
