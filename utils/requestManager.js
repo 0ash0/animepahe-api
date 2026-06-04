@@ -587,14 +587,39 @@ class RequestManager {
             }
 
             const page = await context.newPage();
-            console.log(`[Playwright API] Fetching ${apiUrl.toString()}`);
-            const response = await page.goto(apiUrl.toString(), {
+            console.log('[Playwright API] Opening home page before same-origin API fetch');
+            const homeResponse = await page.goto(Config.getUrl('home'), {
                 waitUntil: 'domcontentloaded',
                 timeout: 60000
             });
 
-            const status = response ? response.status() : 0;
-            const text = await page.locator('body').innerText({ timeout: 5000 }).catch(async () => page.content());
+            const homeStatus = homeResponse ? homeResponse.status() : 0;
+            const homeTitle = await page.title().catch(() => '');
+            if (homeTitle.toLowerCase().includes('just a moment') || homeStatus === 403 || homeStatus === 503) {
+                const homeText = await page.locator('body').innerText({ timeout: 5000 }).catch(async () => page.content());
+                console.log(`[Playwright API] Home page blocked status=${homeStatus} title="${homeTitle}" body=${homeText.slice(0, 200)}`);
+                throw new CustomError('DDoS-Guard authentication required, invalid cookies', 403);
+            }
+
+            console.log(`[Playwright API] Same-origin fetch ${apiUrl.pathname}${apiUrl.search}`);
+            const fetchResult = await page.evaluate(async (apiPath) => {
+                const response = await fetch(apiPath, {
+                    method: 'GET',
+                    credentials: 'include',
+                    headers: {
+                        'Accept': 'application/json, text/javascript, */*; q=0.01',
+                        'x-requested-with': 'XMLHttpRequest'
+                    }
+                });
+
+                return {
+                    status: response.status,
+                    text: await response.text()
+                };
+            }, `${apiUrl.pathname}${apiUrl.search}`);
+
+            const status = fetchResult.status;
+            const text = fetchResult.text;
             const trimmedText = text.trim();
 
             if (trimmedText.includes('DDoS-GUARD') ||
