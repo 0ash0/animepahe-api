@@ -540,6 +540,13 @@ class RequestManager {
                 httpsAgent = new HttpsProxyAgent(formattedProxyUrl);
             }
 
+            const isChromiumUserAgent = /Chrome|Chromium|Edg\//i.test(Config.userAgent);
+            const browserHintHeaders = isChromiumUserAgent ? {
+                "sec-ch-ua": '"Not A(Brand";v="99", "Microsoft Edge";v="121", "Chromium";v="121"',
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": '"Windows"',
+            } : {};
+
             const response = await axios.get(url, {
                 params: params,
                 headers: {
@@ -547,15 +554,12 @@ class RequestManager {
                     'Accept-Language': 'en-US,en;q=0.9',
                     'Referer': Config.getUrl('home'),
                     'User-Agent': Config.userAgent,
-                    'Sec-Fetch-*': '?', 
                     "dnt": "1",
-                    "sec-ch-ua": '"Not A(Brand";v="99", "Microsoft Edge";v="121", "Chromium";v="121"',
-                    "sec-ch-ua-mobile": "?0",
-                    "sec-ch-ua-platform": '"Windows"',
                     "sec-fetch-dest": "empty",
                     "sec-fetch-mode": "cors",
                     "sec-fetch-site": "same-origin",
                     "x-requested-with": "XMLHttpRequest",
+                    ...browserHintHeaders,
                     'Cookie': cookieHeader
                 },
                 proxy: false,
