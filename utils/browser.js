@@ -15,7 +15,7 @@ let playwrightExtraAvailable = false;
 if (String(process.env.USE_STEALTH).toLowerCase() === 'true') {
     try {
         const playwrightExtra = require('playwright-extra');
-        const stealth = require('playwright-extra-plugin-stealth')();
+        const stealth = require('puppeteer-extra-plugin-stealth')();
         // Use playwright-extra's chromium and register stealth plugin
         chromium = playwrightExtra.chromium;
         chromium.use(stealth);
